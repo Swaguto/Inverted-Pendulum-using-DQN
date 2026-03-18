@@ -1,0 +1,189 @@
+<?xml version="1.0" ?>
+<!-- Generated using onshape-to-robot -->
+<!-- Onshape https://cad.onshape.com/documents/265efb939ed346b4f7d58738/w/e78ce4e22e083f7f18410c40/e/9bd407be63addb95f326e36a -->
+<robot name="C:\Users\Rohith\--pendenv2\robot">
+  <!-- Link linear_rail -->
+  <link name="linear_rail">
+    <inertial>
+      <origin xyz="-0.0247248 -0.0874845 -0.0764714" rpy="0 0 0"/>
+      <mass value="3.07157"/>
+      <inertia ixx="0.00459585" ixy="-0" ixz="-1.03574e-06" iyy="0.112669" iyz="-0" izz="0.11651"/>
+    </inertial>
+    <!-- Part linear_rail -->
+    <visual>
+      <origin xyz="0.292708 -0.12654 -0.0732083" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\linear_rail.stl"/>
+      </geometry>
+      <material name="linear_rail_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.292708 -0.12654 -0.0732083" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\linear_rail.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part linear_rail_2 -->
+    <visual>
+      <origin xyz="0.292708 -0.0484295 -0.0732083" rpy="-0 0 0"/>
+      <geometry>
+        <mesh filename="package://assets\linear_rail.stl"/>
+      </geometry>
+      <material name="linear_rail_2_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.292708 -0.0484295 -0.0732083" rpy="-0 0 0"/>
+      <geometry>
+        <mesh filename="package://assets\linear_rail.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part wood_base -->
+    <visual>
+      <origin xyz="-0.0497919 -0.0874845 -0.104688" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\wood_base.stl"/>
+      </geometry>
+      <material name="wood_base_material">
+        <color rgba="0.713725 0.760784 0.8 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0497919 -0.0874845 -0.104688" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\wood_base.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link part_1 -->
+  <link name="part_1">
+        <inertial>
+            <mass value="0.5" />
+            <origin xyz="0 -0.01 -0.01" rpy="0 -0 0" />
+            <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01" />
+        </inertial>
+    <!-- Part part_1 -->
+    <visual>
+      <origin xyz="0.023 0.010085 -0.034" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1.stl"/>
+      </geometry>
+      <material name="part_1_material">
+        <color rgba="0.811765 0.858824 0.898039 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.023 0.010085 -0.034" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_2 -->
+    <visual>
+      <origin xyz="-0.00307553 0.0608641 -0.058669" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1__2.stl"/>
+      </geometry>
+      <material name="part_1_2_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00307553 0.0608641 -0.058669" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1__2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2 -->
+    <visual>
+      <origin xyz="0.023 -0.009915 -0.034" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://assets\part_2.stl"/>
+      </geometry>
+      <material name="part_2_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.023 -0.009915 -0.034" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://assets\part_2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part am_4456_8_mm_id_22_mm_od_shielded_bearing_608zz_57155k629 -->
+    <visual>
+      <origin xyz="-0.0381275 0.800812 0.00913641" rpy="3.14159 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://assets\am_4456_8_mm_id_22_mm_od_shielded_bearing_608zz_57155k629.stl"/>
+      </geometry>
+      <material name="am_4456_8_mm_id_22_mm_od_shielded_bearing_608zz_57155k629_material">
+        <color rgba="0.752941 0.752941 0.752941 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0381275 0.800812 0.00913641" rpy="3.14159 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://assets\am_4456_8_mm_id_22_mm_od_shielded_bearing_608zz_57155k629.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_3 -->
+    <visual>
+      <origin xyz="0.023 -0.009815 -0.034" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_3_material">
+        <color rgba="0.203922 0.188235 0.188235 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.023 -0.009815 -0.034" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://assets\part_1__3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link pendulum -->
+  <link name="pendulum">
+    <inertial>
+      <origin xyz="0.180319 -0 -0.00707436" rpy="0 0 0"/>
+      <mass value="0.2"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+    </inertial>
+    <!-- Part pendulum -->
+    <visual>
+      <origin xyz="0.3968 0 -0.00505505" rpy="-3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://assets\pendulum.stl"/>
+      </geometry>
+      <material name="pendulum_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.3968 0 -0.00505505" rpy="-3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://assets\pendulum.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from part_1 to pendulum -->
+  <joint name="pendulum_pivot" type="revolute">
+    <origin xyz="-0.0100755 0.0261118 -0.0336771" rpy="-1.5708 -0.132152 1.5708"/>
+    <parent link="part_1"/>
+    <child link="pendulum"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from linear_rail to part_1 -->
+  <joint name="cart_slider" type="prismatic">
+    <origin xyz="-0.0180985 -0.0264295 -0.0601986" rpy="1.5708 -0 -1.5708"/>
+    <parent link="linear_rail"/>
+    <child link="part_1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="100" velocity="100" lower="-0.15" upper="0.15"/>
+  </joint>
+</robot>
