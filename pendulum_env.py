@@ -13,6 +13,7 @@ class InvertedPendulumEnv(gym.Env):
     def __init__(self, render_mode=None):
         super(InvertedPendulumEnv, self).__init__()
         
+        self.render_mode = render_mode
         if render_mode == "human":
             self.physicsClient = p.connect(p.GUI)
         else:
@@ -20,13 +21,16 @@ class InvertedPendulumEnv(gym.Env):
             
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         
-        # Continuous force action on the cart
-        self.action_space = gym.spaces.Box(low=-30.0, high=30.0, shape=(1,), dtype=np.float32)
+        # Continuous force action on the cart (N)
+        # Reduced max force for more realistic hardware limits
+        self.max_force = 20.0
+        self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         
-        # Observations: Normalized [cart_pos, cart_vel, pole_angle, pole_vel]
+        # Observations: [cart_pos, cart_vel, cos(pole_angle), sin(pole_angle), pole_vel]
+        # We use cos/sin to avoid angle discontinuity (swinging past 180 deg)
         self.observation_space = gym.spaces.Box(
-            low=np.array([-2.0, -2.0, -2.0, -2.0]),
-            high=np.array([2.0, 2.0, 2.0, 2.0]),
+            low=np.array([-1.0, -1.0, -1.0, -1.0, -1.0]),
+            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0]),
             dtype=np.float32
         )
         
@@ -34,6 +38,10 @@ class InvertedPendulumEnv(gym.Env):
         self.robotId = None
         self.cart_joint_index = 0
         self.pole_joint_index = 1
+        
+        # Physical limits from URDF
+        # Physical limits from URDF (Matching ~25 inch rail: +/- 12.5 inch = 0.31m)
+        self.cart_limit = 0.3
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -42,61 +50,75 @@ class InvertedPendulumEnv(gym.Env):
             p.resetSimulation()
             p.setGravity(0, 0, -9.81)
             p.loadURDF("plane.urdf")
+            # Load with fixed base at 1.0m height
             self.robotId = p.loadURDF(self.urdf_path, [0, 0, 1.0], useFixedBase=True)
-            p.changeDynamics(self.robotId, self.pole_joint_index, jointDamping=0.0)
+            p.changeDynamics(self.robotId, self.pole_joint_index, jointDamping=0.01) # Slightly more damping
             p.setJointMotorControl2(self.robotId, self.pole_joint_index, p.VELOCITY_CONTROL, force=0)
         
         # Fast reset — reset joint states only
         p.resetJointState(self.robotId, self.cart_joint_index, 0.0, 0.0)
-        # Random initial tilt from 5° to 12° to force active balancing
-        sign = self.np_random.choice([-1, 1])
-        mag = self.np_random.uniform(low=0.08, high=0.21)  # 4.6° to 12°
-        initial_tilt = sign * mag
-        p.resetJointState(self.robotId, self.pole_joint_index, initial_tilt, 0.0)
+        
+        # START AT BOTTOM (PI)
+        # Add a bit of random tilt to start the swing
+        initial_angle = np.pi + self.np_random.uniform(low=-0.2, high=0.2)
+        p.resetJointState(self.robotId, self.pole_joint_index, initial_angle, 0.0)
         
         return self._get_obs(), {}
 
     def _get_obs(self):
         cart_state = p.getJointState(self.robotId, self.cart_joint_index)
         pole_state = p.getJointState(self.robotId, self.pole_joint_index)
+        
+        theta = pole_state[0]
+        
         obs = np.array([
-            cart_state[0] / 2.0,        # cart position normalized to [-1,1]
-            cart_state[1] / 5.0,        # cart velocity
-            pole_state[0],              # pole angle (rad) — already small
-            pole_state[1] / 5.0         # pole angular velocity
+            cart_state[0] / self.cart_limit,    # cart position normalized to [-1,1]
+            cart_state[1] / 2.0,               # cart velocity
+            np.cos(theta),                     # cos(angle)
+            np.sin(theta),                     # sin(angle)
+            pole_state[1] / 10.0               # pole angular velocity
         ], dtype=np.float32)
         return obs
 
     def step(self, action):
         if not p.isConnected():
-            return np.zeros(4, dtype=np.float32), 0, True, True, {}
+            return np.zeros(5, dtype=np.float32), 0, True, True, {}
             
+        # Action is normalized [-1, 1], scale to max_force
+        applied_force = action[0] * self.max_force
+        
         p.setJointMotorControl2(
             bodyIndex=self.robotId,
             jointIndex=self.cart_joint_index,
             controlMode=p.TORQUE_CONTROL,
-            force=float(np.clip(action[0], -30.0, 30.0))
+            force=float(np.clip(applied_force, -self.max_force, self.max_force))
         )
         
         # 1 simulation step per agent step (240 Hz)
         p.stepSimulation()
         
         obs = self._get_obs()
-        cart_pos_norm, _, pole_angle, _ = obs
+        cart_pos_norm, cart_vel, cos_theta, sin_theta, pole_vel = obs
         
-        # SHAPED REWARD: cos(angle) gives 1.0 when vertical, drops to 0 at 90°
-        # This forces the agent to keep the pole as upright as possible
-        reward = np.cos(pole_angle)
+        # REWARD FUNCTION: Faster swing-up and stable balance
+        # 1. Angle reward (upright is 1.0, bottom is -1.0)
+        reward = float(cos_theta) 
         
-        # Termination: cart out of range or pole past 45°
-        terminated = bool(
-            np.abs(cart_pos_norm) > 0.95 or
-            np.abs(pole_angle) > 0.785  # 45°
-        )
+        # 2. Penalty for being far from center (keep cart on rail)
+        reward -= float(0.1 * (cart_pos_norm**2))
+        
+        # 3. Stabilization penalty when near top
+        if cos_theta > 0.8:
+            reward -= float(0.05 * (pole_vel**2))
+            reward -= float(0.1 * (cart_vel**2))
+        
+        # Termination: cart hits track limits
+        terminated = bool(np.abs(cart_pos_norm) > 1.0)
+        
         if terminated:
-            reward = -1.0  # Penalty for falling
+            reward = -10.0 # Heavy penalty for hitting the wall
             
-        return obs, reward, terminated, False, {}
+        return obs, float(reward), terminated, False, {}
 
     def close(self):
         p.disconnect()
