@@ -100,23 +100,23 @@ class InvertedPendulumEnv(gym.Env):
         obs = self._get_obs()
         cart_pos_norm, cart_vel, cos_theta, sin_theta, pole_vel = obs
         
-        # REWARD FUNCTION: Faster swing-up and stable balance
-        # 1. Angle reward (upright is 1.0, bottom is -1.0)
-        reward = float(cos_theta) 
+        # REWARD FUNCTION: Aligned with reference SAC project
+        # Reference uses: cos(theta) - 0.001 * (theta_dot**2) - 0.1 * abs(x)
         
-        # 2. Penalty for being far from center (keep cart on rail)
-        reward -= float(0.1 * (cart_pos_norm**2))
+        # 1. Base reward is cos(theta) (upright = 1.0, bottom = -1.0)
+        reward = float(cos_theta)
         
-        # 3. Stabilization penalty when near top
-        if cos_theta > 0.8:
-            reward -= float(0.05 * (pole_vel**2))
-            reward -= float(0.1 * (cart_vel**2))
+        # 2. Penalty for angular velocity (stabilization)
+        reward -= 0.001 * (pole_vel ** 2)
+        
+        # 3. Penalty for cart distance from center
+        reward -= 0.1 * abs(cart_pos_norm)
         
         # Termination: cart hits track limits
         terminated = bool(np.abs(cart_pos_norm) > 1.0)
         
         if terminated:
-            reward = -10.0 # Heavy penalty for hitting the wall
+            reward = -100.0 # Heavy penalty for hitting the wall
             
         return obs, float(reward), terminated, False, {}
 
