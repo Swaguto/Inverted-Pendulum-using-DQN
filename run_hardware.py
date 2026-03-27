@@ -12,7 +12,10 @@ def run_hardware_evaluation():
     # Initialize the Serial Environment
     # NOTE: You may need to change 'COM3' to whatever port your Arduino is on
     port = 'COM3' 
-    baudrate = 115200
+    baudrate = 250000
+    
+    # SET THIS TO True IF THE MOTOR PUSHES THE WRONG WAY
+    INVERT_MOTOR = True 
     
     try:
         env = HardwarePendulumEnv(port=port, baudrate=baudrate)
@@ -59,15 +62,24 @@ def run_hardware_evaluation():
             action_idx = np.argmax(q_values)
             
             # 4. Step Environment 
-            # In your simulation, action is 0: -vel, 1: +vel
-            next_state, reward, terminal, truncated, _ = env.step(action_idx)
+            actual_action = action_idx
+            if INVERT_MOTOR:
+                actual_action = 1 - action_idx # flip 0 to 1 and vice versa
+                
+            next_state, reward, terminal, truncated, _ = env.step(actual_action)
             
             state = next_state
             step += 1
             
             # Print brief status every 50 loops
             if step % 50 == 0:
-                print(f"Step {step} | Pos: {state[0]:.2f}m | Vel: {state[1]:.2f} | Angle: {state[2]:.2f} rad")
+                # Convert back to degrees for user display (0 at bottom, 180 at top)
+                # state[2] is internal angle (0 = top). 
+                # Display degree = (state[2] + pi) * 180 / pi
+                display_deg = (state[2] + np.pi) * 180 / np.pi
+                print(f"Step {step} | Pos: {state[0]:.2f}m | Vel: {state[1]:.2f} | Angle: {display_deg:.1f}°")
+                if abs(state[0]) < 0.001 and display_deg < 0.1:
+                    print("  [Note: Encoder readings are currently zero. Try moving the hardware by hand.]")
             
             # Brief sleep to match model inference rate trained at (1/60th or 1/240th usually). 
             # Hardware serial inherently provides some delay, but we ensure we don't overkill.

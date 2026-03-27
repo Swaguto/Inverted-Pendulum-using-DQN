@@ -1,0 +1,249 @@
+print("--- DIAGNOSTIC START ---")
+import sys
+print(f"Python: {sys.version}")
+
+import pybullet as p
+print("PyBullet imported")
+import torch
+print("Torch imported")
+import torch.optim as optim
+import numpy as np
+import pybullet_data
+print("Data imported")
+import time
+from itertools import count
+import math
+import os
+
+from gym_inverted_pendulum import FCQ
+from gym_inverted_pendulum import ReplayBuffer
+print("Custom modules imported")
+
+class pybulletDQN():
+    def __init__(self, replay_buffer, online_model, target_model, optimizer, update_freq, epochs = 40, gamma = 0.99):
+        self.replay_buffer = replay_buffer
+        self.online_model = online_model
+        self.target_model = target_model
+        self.optimizer = optimizer
+        self.update_freq = update_freq
+        self.gamma = gamma
+        self.epoch = epochs
+
+    def choose_action_egreedy(self, state, eps):
+        state = torch.tensor(state, dtype=torch.float32, device=self.online_model.device)
+        with torch.no_grad():
+            q = self.online_model(state).detach().cpu().data.numpy().squeeze()
+        if np.random.rand() > eps:
+            action = np.argmax(q)
+        else:
+            action = np.random.randint(self.online_model.output_dim)
+        return action
+    
+    def choose_action_greedy(self, state):
+        state = torch.tensor(state, dtype=torch.float32, device=self.online_model.device)
+        with torch.no_grad():
+            q = self.online_model(state).cpu().detach().numpy()
+        action = np.argmax(q)
+        return action
+    
+    def soft_update_weights(self, tau=1.0):
+        for target_param, online_param in zip(self.target_model.parameters(), self.online_model.parameters()):
+            target_param.data.copy_(tau * online_param.data + (1.0 - tau) * target_param.data)
+
+    def learn(self):
+        states, actions, rewards, next_states, terminals = self.replay_buffer.draw_samples()
+        states = torch.tensor(states, dtype=torch.float32, device=self.online_model.device)
+        actions = torch.tensor(actions, dtype=torch.int64, device=self.online_model.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.online_model.device)
+        next_states = torch.tensor(next_states, dtype=torch.float32, device=self.online_model.device)
+        terminals = torch.tensor(terminals, dtype=torch.float32, device=self.online_model.device)
+
+        qsa_next_max = self.target_model(next_states).detach().max(1)[0].unsqueeze(1)
+        yj = rewards + (self.gamma * qsa_next_max * (1 - terminals))
+        qsa = self.online_model(states).gather(1, actions)
+        
+        loss = torch.nn.functional.mse_loss(qsa, yj)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()
+    
+    def eval(self, robotId, max_steps = 500, randomize_val = 0.1, friction = 0.005):
+        reset_joint_swingup(robotId, randomize_val=randomize_val, friction=friction)
+        state = get_state(robotId)
+        episode_score = 0
+        terminal = False
+        truncated = False
+
+        for step in count():
+            state = get_state(robotId)
+            if state[0] > 0.3 or state[0] < -0.3:
+                reward = -100
+                terminal = True
+            else:
+                reward = math.cos(state[2]) - 0.002 * (state[3]) ** 2 - 0.5 * (state[0] ** 2)
+
+            if step > max_steps:
+                truncated = True
+            
+            if step > 0:
+                episode_score += reward
+
+            if terminal or truncated:
+                action = 2 # Stop
+                send_smooth_action(robotId, action)
+                break
+
+            action = self.choose_action_greedy(state)
+            send_smooth_action(robotId, action)
+            p.stepSimulation()
+        return episode_score
+
+def reset_joint_swingup(robotId, randomize_val=0.1, friction=0.005):
+    randomize_cart = np.random.uniform(-randomize_val, randomize_val)
+    # Start near PI (bottom) for swing-up training
+    randomize_pole = np.random.uniform(-0.1, 0.1)
+    target_pole = 3.14159 + randomize_pole
+    
+    p.resetJointState(bodyUniqueId=robotId, jointIndex=0, targetValue=randomize_cart)
+    p.resetJointState(bodyUniqueId=robotId, jointIndex=1, targetValue=target_pole)
+    
+    p.setJointMotorControl2(bodyUniqueId=robotId, jointIndex=1, controlMode=p.VELOCITY_CONTROL, targetVelocity=0, force=friction)
+    p.setJointMotorControl2(bodyUniqueId=robotId, jointIndex=0, controlMode=p.VELOCITY_CONTROL, targetVelocity=0, force=0)
+
+def get_state(robotId):
+    cart_state = p.getJointState(robotId, 0)
+    pole_state = p.getJointState(robotId, 1)
+    pole_angle = (pole_state[0] + np.pi) % (2 * np.pi) - np.pi
+    return np.array([cart_state[0], cart_state[1], pole_angle, pole_state[1]], dtype=np.float32)
+
+def send_smooth_action(robotId, action):
+    force_limit = 50.0 
+    # Action Mapping:
+    # 0: Fast Left (-5.0)
+    # 1: Slow Left (-1.5)
+    # 2: Stop (0.0)
+    # 3: Slow Right (1.5)
+    # 4: Fast Right (5.0)
+    velocities = [-5.0, -1.5, 0.0, 1.5, 5.0]
+    
+    if action >= 0 and action < 5:
+        target_v = velocities[action]
+    else:
+        target_v = 0.0
+        
+    p.setJointMotorControl2(bodyUniqueId=robotId, jointIndex=0, controlMode=p.VELOCITY_CONTROL, targetVelocity=target_v, force=force_limit)
+
+def main():
+    epochs = 20
+    episodes = 1500
+    max_steps = 500
+
+    learning_rate = 0.001
+    batch_size = 512
+    warmup_batches = 3
+    update_freq = 15
+    min_steps_to_learn = warmup_batches * batch_size
+
+    replay_buffer = ReplayBuffer(batch_size=batch_size, max_size=100000)
+
+    num_actions = 5 # SMOOTH ACTIONS!
+    num_states = 4
+    
+    save_dir = "saved_models/dqn_smooth"
+    os.makedirs(save_dir, exist_ok=True)
+    
+    online_model = FCQ(num_states, num_actions, (256, 128))
+    target_model = FCQ(num_states, num_actions, (256, 128))
+    optimizer = optim.RMSprop(online_model.parameters(), lr=learning_rate)
+
+    agent = pybulletDQN(replay_buffer, online_model, target_model, optimizer, update_freq, epochs=epochs, gamma=0.99)
+    agent.soft_update_weights()
+
+    eval_interval = 25
+    decay_steps = episodes * 0.8
+    eval_scores = []
+    episode_scores = []
+
+    physicsClient = p.connect(p.DIRECT)
+    p.setAdditionalSearchPath(pybullet_data.getDataPath())
+    p.setGravity(0, 0, -9.81)
+    
+    friction = 0.01 
+    randomize_val = 0.05
+    p.loadURDF("plane.urdf", [0, 0, 0])
+    robotId = p.loadURDF("robot/robot.urdf", [0, 0, 1.0], useFixedBase=True)
+
+    print(f"Starting Smooth Training with {num_actions} actions...", flush=True)
+    for e in range(episodes):
+        reset_joint_swingup(robotId, randomize_val=randomize_val, friction=friction)
+        state = get_state(robotId)
+        episode_score = 0
+        eps = max(1-e/decay_steps, 0.05)
+        terminal = False
+        truncated = False
+
+        for step in count():
+            action = agent.choose_action_egreedy(state, eps)
+            send_smooth_action(robotId, action)
+            p.stepSimulation()
+            
+            prev_state = state.copy()
+            state = get_state(robotId)
+            
+            if state[0] > 0.3 or state[0] < -0.3:
+                reward = -100
+                terminal = True
+            else:
+                # Add a small penalty for high velocities to encourage using slow modes when balanced
+                reward = math.cos(state[2]) - 0.002 * (state[3]) ** 2 - 0.5 * (state[0] ** 2)
+                if abs(state[2]) < 0.1: # Near upright
+                    if action == 1 or action == 3: # Using slow modes
+                        reward += 0.05
+                    elif action == 2: # Stop mode
+                        reward += 0.1
+
+            if step > max_steps:
+                truncated = True
+            
+            if step > 0:
+                experience = (prev_state, action, reward, state, terminal)
+                agent.replay_buffer.store(experience)
+                episode_score = float(episode_score) + float(reward)
+            
+            if terminal or truncated:
+                send_smooth_action(robotId, 2)
+                episode_scores.append(episode_score)
+                if len(agent.replay_buffer) > min_steps_to_learn:
+                    for _ in range(step):
+                        agent.learn()
+                if e % update_freq == 0 and e > 1:
+                    agent.soft_update_weights()
+                break
+
+        if e % 50 == 0 and e > 1:
+            torch.save(agent.online_model, os.path.join(save_dir, f"model_smooth_ep{e}.pth"))
+            # Also keep latest as model_smooth_final.pth for convenience
+            torch.save(agent.online_model, os.path.join(save_dir, "model_smooth_final.pth"))
+            print(f"  --> Periodic checkpoint saved at episode {e}", flush=True)
+
+        if e % eval_interval == 0 and e > 1:
+            eval_score = agent.eval(robotId=robotId, max_steps=max_steps, friction=friction)
+            eval_scores.append(float(eval_score))
+            if len(eval_scores) >= 5:
+                eval_rolling_mean = int(np.mean(eval_scores[-5:]))
+            else:
+                eval_rolling_mean = int(np.mean(eval_scores))
+            print(f"  -> Eval score: {eval_score:.1f}, Rolling mean: {eval_rolling_mean}", flush=True)
+            
+            if eval_rolling_mean > 250: # Slightly higher bar for smooth balance
+                print("Solved with Smooth Control!", flush=True)
+                torch.save(agent.online_model, os.path.join(save_dir, "model_smooth.pth"))
+                break
+
+    p.disconnect()
+    torch.save(agent.online_model, os.path.join(save_dir, "model_smooth_final.pth"))
+    print(f"Training finished. Model saved to {os.path.join(save_dir, 'model_smooth_final.pth')}", flush=True)
+
+if __name__ == "__main__":
+    main()

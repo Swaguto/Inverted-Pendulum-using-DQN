@@ -9,11 +9,11 @@ class HardwarePendulumEnv(gym.Env):
     Matches the state/action spaces of the simulation environment but routes
     commands through PySerial to the Arduino.
     """
-    def __init__(self, port='COM3', baudrate=115200):
+    def __init__(self, port='COM3', baudrate=250000):
         super(HardwarePendulumEnv, self).__init__()
         
-        # Max stepper velocity (Steps per second). Tune this for your driver/motor
-        self.max_velocity = 2000 
+        # Max stepper velocity (Steps per second). Increased with ramp support.
+        self.max_velocity = 35000 
         
         # Action space is discrete (0: Left, 1: Right)
         self.action_space = gym.spaces.Discrete(2)
@@ -67,8 +67,8 @@ class HardwarePendulumEnv(gym.Env):
             print(f"Warning: Corrupted serial line read: {line}")
             
         # 2. Convert to Physics Units
-        # Assume encoder count 0 was when pendulum was hanging straight down (Pi radians)
-        theta = (pend_count / self.PEND_COUNTS_PER_REV) * 2 * np.pi + np.pi
+        # User confirmed Pendulum Right = Negative. We need Right = Positive.
+        theta = -(pend_count / self.PEND_COUNTS_PER_REV) * 2 * np.pi 
         cart_pos = cart_count / self.CART_COUNTS_PER_METER
         
         # 3. Compute Velocities via discrete derivative
@@ -89,13 +89,17 @@ class HardwarePendulumEnv(gym.Env):
         self.last_time = current_time
         
         # 4. Normalize appropriately as neural net expects
-        # train_dqn.py uses: [cart_state[0], cart_state[1], pole_angle, pole_state[1]]
-        # pole_angle is normalized to [-pi, pi]
+        # Model was trained with 0 as UPRIGHT.
+        # If theta=0 is bottom, then upright is theta=pi.
+        # Internal model angle = theta - pi (wrapped)
+        model_theta = (theta - np.pi + np.pi) % (2 * np.pi) - np.pi # matches wrap logic
+        # wait, (theta - pi) wrapped is what we want.
+        internal_angle = (theta - np.pi + np.pi) % (2 * np.pi) - np.pi
         
         obs = np.array([
             cart_pos,           # raw cart position in meters
             cart_vel,           # raw cart velocity in m/s
-            (theta + np.pi) % (2 * np.pi) - np.pi, # wrapped pole angle
+            internal_angle,     # wrapped pole angle (0 is upright)
             pole_vel            # raw pole angular velocity
         ], dtype=np.float32)
         
@@ -117,13 +121,13 @@ class HardwarePendulumEnv(gym.Env):
         return self._get_obs(), {}
         
     def step(self, action):
-        # Action is Discrete (0: -velocity, 1: +velocity)
-        # train_dqn.py maps 0 -> -5.0 vel, 1 -> 5.0 vel
-        if action == 0:
-            target_vel = -self.max_velocity
-        elif action == 1:
-            target_vel = self.max_velocity
-        else: # Action -1 (Stop)
+        # Action is Discrete (0: FastL, 1: SlowL, 2: Stop, 3: SlowR, 4: FastR)
+        # We multiply max_velocity by these weights
+        weights = [-1.0, -0.3, 0.0, 0.3, 1.0]
+        
+        if 0 <= action < len(weights):
+            target_vel = int(self.max_velocity * weights[action])
+        else:
             target_vel = 0
             
         # Send action to Arduino
@@ -141,7 +145,7 @@ class HardwarePendulumEnv(gym.Env):
             self.ser.write(b"A0\n") # Emergency Stop Motor!
             print("Terminated: Cart reached rail boundaries!")
             
-        reward = 0.0 # Reward is mostly irrelevant for pure execution mode if not training
+        reward = 0.0 
             
         return obs, float(reward), terminated, False, {}
         
